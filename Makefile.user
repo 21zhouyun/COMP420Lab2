@@ -1,0 +1,40 @@
+#
+#  Makefile template for making your user-level test programs.  To run
+#  this Makefile, use the command:
+#
+#      make -f Makefile.user
+#
+#  To use this Makefile, you first *MUST* change the "???" on the "ALL ="
+#  line below to be the name of your user-level test programs.
+#
+#  For example, if you have only one user-level test program and the
+#  source to it is all in the one source file "testusr.c", then change
+#  this line to read "ALL = testusr".  The "make" command above will
+#  then be able to automatically compile "testusr.c" to produce the
+#  user-level program executable "testusr".
+#
+#  If you have multiple different (separate) user test programs, you can
+#  list them all on this line, such as "ALL = testusr1 testusr2 testusr3".
+#  The make command above would then automatically compile "testusr1.c" to
+#  produce "testusr1", compile "testusr2.c" to produce "testusr2", and
+#  compile "testusr3.c" to produce "testusr3".
+#
+#  In most circumstances, you should not need to modify anything else
+#  in this Makefile, other than replacing the "???" as described above.
+
+ALL = ???
+
+PUBDIR = /clear/courses/comp420/pub
+
+CPPFLAGS = -I$(PUBDIR)/include
+CFLAGS = -Wall
+
+LIBS = $(PUBDIR)/lib/libusr420.so
+LDFLAGS = -Wl,-rpath=$(PUBDIR)/lib
+
+all: $(ALL)
+
+$(ALL): $(LIBS)
+
+clean:
+	rm -f $(ALL)

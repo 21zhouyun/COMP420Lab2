@@ -1,0 +1,39 @@
+#
+#  Makefile template for making your system program (operating system
+#  kernel program).  To run this Makefile, use the command:
+#
+#      make -f Makefile.sys
+#
+#  To use this Makefile, you first *MUST* change the "???" on the "ALL ="
+#  line below to be the name of your system program.
+#
+#  For example, if the source to your system program is all in the one
+#  source file "testsys.c", then change this line to read "ALL = testsys".
+#  The "make" command above will then be able to automatically compile
+#  "testsys.c" to produce the system program executable "testsys".
+#
+#  If you have multiple different (separate) test system programs, you can
+#  list them all on this line, such as "ALL = testsys1 testsys2 testsys3".
+#  The make command above would then automatically compile "testsys1.c" to 
+#  produce "testsys1", compile "testsys2.c" to produce "testsys2", and
+#  compile "testsys3.c" to produce "testsys3".
+#
+#  In most circumstances, you should not need to modify anything else
+#  in this Makefile, other than replacing the "???" as described above.
+
+ALL = ???
+
+PUBDIR = /clear/courses/comp420/pub
+
+CPPFLAGS = -I$(PUBDIR)/include
+CFLAGS = -Wall
+
+LIBS = $(PUBDIR)/lib/libsys420.so
+LDFLAGS = -Wl,-rpath=$(PUBDIR)/lib
+
+all: $(ALL)
+
+$(ALL): $(LIBS)
+
+clean:
+	rm -f $(ALL)
