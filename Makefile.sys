@@ -20,18 +20,22 @@
 #
 #  In most circumstances, you should not need to modify anything else
 #  in this Makefile, other than replacing the "???" as described above.
+CC=g++
 
-ALL = ???
+ALL = kernel
 
 PUBDIR = /clear/courses/comp420/pub
 
-CPPFLAGS = -I$(PUBDIR)/include
+CPPFLAGS = -std=c++11 -I$(PUBDIR)/include
 CFLAGS = -Wall
 
 LIBS = $(PUBDIR)/lib/libsys420.so
 LDFLAGS = -Wl,-rpath=$(PUBDIR)/lib
 
 all: $(ALL)
+
+kernel: kernel.o message.o
+	$(CC) $(LDFLAGS) $^ $(LIBS) -o $@
 
 $(ALL): $(LIBS)
 
