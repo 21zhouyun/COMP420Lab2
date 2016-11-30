@@ -14,7 +14,8 @@ int Join(nodeID id) {
     JoinMessage* message = new JoinMessage;
     message->type = JOIN;
     message->id = id;
-    SendMessage(0, message, sizeof(JoinMessage));
+    SendMessage(0, message, sizeof(message));
+    delete message;
     return 0;
 }
 
