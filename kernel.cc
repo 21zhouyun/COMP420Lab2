@@ -124,7 +124,7 @@ void HandleJoinResponseMessage(int src, int dest, const void *msg, int len) {
         mode = NORMAL;
         JoinResponseMessage* message = (JoinResponseMessage*) msg;
         joined_overlay_network = true;
-        // TODO: create own leaf set
+        leaf_set = message->leaf_set;
     }
 }
 
