@@ -34,17 +34,15 @@ struct Entry {
 struct JoinResponseMessage {
     int type;
     nodeID id;
-    std::array<Entry, P2P_LEAF_SIZE> leaf_set;
-    JoinResponseMessage(nodeID node_id, std::array<Entry, P2P_LEAF_SIZE> other_leaf_set):
-        type(JOIN_RES), id(node_id), leaf_set(other_leaf_set) {}
+    Entry leaf_set[P2P_LEAF_SIZE];
+    JoinResponseMessage(nodeID node_id, Entry other_leaf_set[P2P_LEAF_SIZE]);
 };
 
 struct ExchangeMessage {
     int type;
     nodeID id;
-    std::array<Entry, P2P_LEAF_SIZE> leaf_set;
-    ExchangeMessage(nodeID node_id, std::array<Entry, P2P_LEAF_SIZE> other_leaf_set):
-        type(EXCHANGE), id(node_id), leaf_set(other_leaf_set) {}
+    Entry leaf_set[P2P_LEAF_SIZE];
+    ExchangeMessage(nodeID node_id, Entry other_leaf_set[P2P_LEAF_SIZE]);
 };
 
 struct FloodMessage {

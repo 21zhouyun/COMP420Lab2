@@ -35,7 +35,7 @@ bool joined_overlay_network = false;
 nodeID node_id;
 const unsigned short RING_SIZE = 65535;
 
-std::array<Entry, P2P_LEAF_SIZE> leaf_set = {{{0, 0}, {0, 0}, {0, 0}, {0, 0}}};
+Entry leaf_set[P2P_LEAF_SIZE] = {{0, 0}, {0, 0}, {0, 0}, {0, 0}};
 
 void HandleJoinMessage(int src, int dest, const void *msg, int len);
 void HandleJoinResponseMessage(int src, int dest, const void *msg, int len);
@@ -45,6 +45,7 @@ void HandleFloodResponseMessage(int src, int dest, const void *msg, int len);
 void HandleExchangeMessage(int src, int dest, const void *msg, int len);
 
 unsigned short Distance(nodeID x, nodeID y);
+void UpdateLeafSet(nodeID id, int src);
 void PrintLeafSet();
 
 void HandleMessage(int src, int dest, const void *msg, int len) {
@@ -63,15 +64,14 @@ void HandleMessage(int src, int dest, const void *msg, int len) {
                     // we cannot find any existing node, assume we are the first node
                     mode = NORMAL;
                     joined_overlay_network = true;
-                    std::cerr << "Joined network as first node" << std::endl;
-                    PrintLeafSet();
+                    std::cerr << GetPid() << " joined network as first node" << std::endl;
                 }
                 break;
             }
             case NORMAL: {
                 ExchangeMessage* message = new ExchangeMessage(node_id, leaf_set);
                 for (Entry e : leaf_set) {
-                    if (e.pid > 0 && TransmitMessage(GetPid(), e.pid, message, sizeof(message)) < 0) {
+                    if (e.pid > 0 && TransmitMessage(GetPid(), e.pid, message, sizeof(ExchangeMessage)) < 0) {
                         std::cerr << "Fail to send exchange message from "
                                   << GetPid() << " to " << e.pid << std::endl;
                     }
@@ -107,6 +107,7 @@ void HandleMessage(int src, int dest, const void *msg, int len) {
         }
         case EXCHANGE: {
             HandleExchangeMessage(src, dest, msg, len);
+            break;
         }
         default:
             std::cerr << "Unknown message type: " << message->type << std::endl;
@@ -134,12 +135,18 @@ void HandleJoinMessage(int src, int dest, const void *msg, int len) {
         }
         if (next_hop == GetPid()) {
             // current node is the closest node
+            // reply to this join message
             JoinResponseMessage* reply = new JoinResponseMessage(node_id, leaf_set);
-            if (TransmitMessage(GetPid(), src, reply, sizeof(reply)) < 0) {
+            if (TransmitMessage(GetPid(), src, reply, sizeof(JoinResponseMessage)) < 0) {
                 std::cerr << "Fail to send join response message from "
                           << GetPid() << " to " << src << std::endl;
             }
             delete reply;
+
+            // then update my leaf set since I see a new node
+            // this has to be done after sending the reply because otherwise
+            // the new node might see itself in the leaf set
+            UpdateLeafSet(message->id, src);
         } else {
             // forward join message to next node
             if (TransmitMessage(src, next_hop, msg, len) < 0) {
@@ -156,10 +163,7 @@ void HandleJoinResponseMessage(int src, int dest, const void *msg, int len) {
         mode = NORMAL;
         JoinResponseMessage* message = (JoinResponseMessage*) msg;
         joined_overlay_network = true;
-        leaf_set = message->leaf_set;
-        std::cerr << "Joined network by attaching to pid: " << src
-                  << " nodeID: " << message->id << std::endl;
-        PrintLeafSet();
+        std::copy(message->leaf_set, message->leaf_set + P2P_LEAF_SIZE, leaf_set);
     }
 }
 
@@ -168,7 +172,7 @@ void RingSearch(int src, int sequence_number, int hop_count) {
                 sequence_number, hop_count);
     mode = RINGSEARCH;
     FloodMessage* message = new FloodMessage(sequence_number, hop_count);
-    if (TransmitMessage(src, -1, message, sizeof(message)) < 0) {
+    if (TransmitMessage(src, -1, message, sizeof(FloodMessage)) < 0) {
         std::cerr << "Fail to send flood message from " << src << std::endl;
     }
     delete message;
@@ -188,7 +192,7 @@ void HandleFloodMessage(int src, int dest, const void *msg, int len) {
         TracePrintf(10, "Response to flood message from %d\n", src);
         // we are part of the overlay, reply to the src
         Message* reply = new Message(FLOOD_RES);
-        if (TransmitMessage(pid, src, reply, sizeof(reply)) < 0) {
+        if (TransmitMessage(pid, src, reply, sizeof(Message)) < 0) {
             std::cerr << "Failed to send reply to flood message from "
                       << pid << " to " << src << std::endl;
         }
@@ -210,7 +214,7 @@ void HandleFloodResponseMessage(int src, int dest, const void *msg, int len) {
         mode = JOINING;
 
         JoinMessage* message = new JoinMessage(node_id);
-        if (TransmitMessage(GetPid(), src, message, sizeof(message)) < 0) {
+        if (TransmitMessage(GetPid(), src, message, sizeof(JoinMessage)) < 0) {
             std::cerr << "Fail to send join message from "
                       << GetPid() << " to " << src << std::endl;
         }
@@ -223,14 +227,63 @@ void HandleFloodResponseMessage(int src, int dest, const void *msg, int len) {
 void HandleExchangeMessage(int src, int dest, const void *msg, int len) {
     TracePrintf(10, "Received exchange message from %d\n", src);
     ExchangeMessage* message = (ExchangeMessage*) msg;
-    //TODO update leaf set based on the information
+    //Update leaf set based on the information
+    UpdateLeafSet(message->id, src);
+    for (Entry e : message->leaf_set) {
+        UpdateLeafSet(e.id, e.pid);
+    }
+    PrintLeafSet();
 }
 
 unsigned short Distance(nodeID x, nodeID y) {
     return std::min(std::abs(x - y), RING_SIZE - std::abs(x - y));
 }
 
+void UpdateLeafSet(nodeID id, int src) {
+    TracePrintf(10, "Update leaf set (%d,%d)\n", id, src);
+    // index of new id within the existing leaf set
+    int index = -1;
+    if (id < node_id) {
+        for (int i = P2P_LEAF_SIZE / 2 - 1; i >= 0; i--) {
+            if (leaf_set[i].pid == 0 || leaf_set[i].id < id) {
+                index = i;
+                break;
+            }
+        }
+
+        if (index >= 0) {
+            // left shift all entry from index
+            for (int j = index; j > 0; j--) {
+                leaf_set[j - 1].id = leaf_set[j].id;
+                leaf_set[j - 1].pid = leaf_set[j].pid;
+            }
+            // replace index with new entry
+            leaf_set[index].id = id;
+            leaf_set[index].pid = src;
+        }
+    } else {
+        for (int i = P2P_LEAF_SIZE / 2; i < P2P_LEAF_SIZE; i++) {
+            if (leaf_set[i].pid == 0 || leaf_set[i].id > id) {
+                index = i;
+                break;
+            }
+        }
+        if (index >= P2P_LEAF_SIZE / 2) {
+            // left shift all entry from index
+            for (int j = index; j < P2P_LEAF_SIZE - 1; j++) {
+                leaf_set[j + 1].id = leaf_set[j].id;
+                leaf_set[j + 1].pid = leaf_set[j].pid;
+            }
+            // replace index with new entry
+            leaf_set[index].id = id;
+            leaf_set[index].pid = src;
+        }
+    }
+}
+
 void PrintLeafSet() {
-    std::copy(begin(leaf_set), end(leaf_set), std::ostream_iterator<Entry>(std::cerr, " "));
+    for (Entry e : leaf_set) {
+        std::cerr << e << ",";
+    }
     std::cerr << std::endl;
 }
