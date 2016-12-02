@@ -248,6 +248,9 @@ void UpdateLeafSet(nodeID id, int src) {
             if (leaf_set[i].pid == 0 || leaf_set[i].id < id) {
                 index = i;
                 break;
+            } else if (leaf_set[i].id == id) {
+                // we already have this nodeID, no need to update anything
+                return;
             }
         }
 
@@ -266,6 +269,8 @@ void UpdateLeafSet(nodeID id, int src) {
             if (leaf_set[i].pid == 0 || leaf_set[i].id > id) {
                 index = i;
                 break;
+            } else if (leaf_set[i].id == id) {
+                return;
             }
         }
         if (index >= P2P_LEAF_SIZE / 2) {
