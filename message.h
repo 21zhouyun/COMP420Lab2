@@ -11,6 +11,14 @@ const int JOIN_RES = 1;
 const int FLOOD = 2;
 const int FLOOD_RES = 3;
 const int EXCHANGE = 4;
+const int INSERT = 5;
+const int INSERT_CONFIRM = 6;
+const int REPLICATE = 7;
+const int REPLICATE_CONFIRM = 8;
+const int LOOK_UP = 9;
+const int LOOK_UP_RES = 10;
+
+const int data_message_header_size = sizeof(int) + sizeof(fileID);
 
 struct Message {
     int type;
@@ -52,6 +60,33 @@ struct FloodMessage {
     FloodMessage(int s, int h): type(FLOOD), sequence_number(s), hop_count(h) {}
 };
 
+struct ReplicateConfirmMessage {
+    int type;
+    fileID fid;
+    ReplicateConfirmMessage(fileID file_id): type(REPLICATE_CONFIRM), fid(file_id) {}
+};
+
+struct LookupMessage {
+    int type;
+    fileID fid;
+    int len;
+    LookupMessage(fileID file_id, int length): type(LOOK_UP), fid(file_id), len(length) {}
+};
+
+/**
+ * Insert message format:
+ * int type
+ * fileID fid
+ * char[len]
+ *
+ * @param  fid      fileID
+ * @param  contents content of the file
+ * @param  len      length of the content to copy to the buffer
+ * @return          allocated Insert message
+ */
+char* MakeDataMessage(fileID fid, void* contents, int len, int type);
+int ParseDataMessageHeader(const void* msg, int len, fileID* fid);
+int ParseDataMessageContent(const void* msg, int len, char* buf, int buf_len);
 
 #endif
 

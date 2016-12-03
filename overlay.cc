@@ -11,9 +11,7 @@
  */
 int Join(nodeID id) {
     TracePrintf(10, "Forward join request from nodeID %hu\n", id);
-    JoinMessage* message = new JoinMessage;
-    message->type = JOIN;
-    message->id = id;
+    JoinMessage* message = new JoinMessage(id);
     SendMessage(0, message, sizeof(message));
     delete message;
     return 0;
@@ -27,8 +25,18 @@ int Join(nodeID id) {
  * @return          status of the insert
  */
 int Insert(fileID fid, void* contents, int len) {
-    // TODO
-    return 0;
+    TracePrintf(10, "Forward insert request\n");
+    int status = 0;
+    int src = 0;
+    char* message = MakeDataMessage(fid, contents, len, INSERT);
+    SendMessage(0, message, data_message_header_size + len * sizeof(char));
+    delete[] message;
+
+    if (ReceiveMessage(&src, &status, sizeof(int)) < 0) {
+        std::cerr << "Fail to receive confirmation message for insert" << std::endl;
+    }
+    TracePrintf(10, "Done inserting file %hu\n", fid);
+    return status;
 }
 
 /**
@@ -39,8 +47,30 @@ int Insert(fileID fid, void* contents, int len) {
  * @return          status of the lookup
  */
 int Lookup(fileID fid, void* contents, int len) {
-    // TODO
-    return 0;
+    TracePrintf(10, "Forward lookup request\n");
+    int src = 0;
+    int status = 0;
+
+    if (len == 0) {
+        return 0;
+    }
+    LookupMessage* message = new LookupMessage(fid, len);
+    SendMessage(0, message, sizeof(LookupMessage));
+    delete message;
+
+    // receive status first
+    if (ReceiveMessage(&src, &status, sizeof(int)) < 0) {
+        std::cerr << "Fail to receive confirmation message for lookup" << std::endl;
+    }
+
+    if (status == 0) {
+        return status;
+    }
+
+    if (ReceiveMessage(&src, contents, len) < 0) {
+        std::cerr << "Fail to receive reply message for lookup" << std::endl;
+    }
+    return status;
 }
 
 /**

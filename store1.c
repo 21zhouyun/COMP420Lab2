@@ -187,25 +187,25 @@ main(int argc, char **argv) {
 
     MilliSleep(25 * 1000);  /* allow both Lookups to finish too */
 
-    if (Idx == 1) {
-        /*
-         *  Reclaim the two different files we inserted above.
-         *  The Reclaim operation should return 0 on success.
-         */
-        status = Reclaim(FID1);
-        if (status != 0) {
-            fprintf(stderr, "ERROR: Reclaim 1 returned %d!\n", status);
-            exit(1);
-        }
-        status = Reclaim(FID2);
-        if (status != 0) {
-            fprintf(stderr, "ERROR: Reclaim 2 returned %d!\n", status);
-            exit(1);
-        }
-        fprintf(stderr, "There will be a delay before the exit...\n");
-    }
+    // if (Idx == 1) {
+    //     /*
+    //      *  Reclaim the two different files we inserted above.
+    //      *  The Reclaim operation should return 0 on success.
+    //      */
+    //     status = Reclaim(FID1);
+    //     if (status != 0) {
+    //         fprintf(stderr, "ERROR: Reclaim 1 returned %d!\n", status);
+    //         exit(1);
+    //     }
+    //     status = Reclaim(FID2);
+    //     if (status != 0) {
+    //         fprintf(stderr, "ERROR: Reclaim 2 returned %d!\n", status);
+    //         exit(1);
+    //     }
+    //     fprintf(stderr, "There will be a delay before the exit...\n");
+    // }
 
-    MilliSleep(25 * 1000);  /* allow both Reclaims to also finish */
+    // MilliSleep(25 * 1000);  /* allow both Reclaims to also finish */
 
     /*
      *  Now all the test operations should be done across all

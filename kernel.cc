@@ -2,8 +2,10 @@
 #include <unordered_map>
 #include <iostream>
 #include <cmath>
+#include <cstring>
 #include <algorithm>
 #include <array>
+#include <utility>
 #include <iterator>
 
 #include "message.h"
@@ -37,12 +39,25 @@ const unsigned short RING_SIZE = 65535;
 
 Entry leaf_set[P2P_LEAF_SIZE] = {{0, 0}, {0, 0}, {0, 0}, {0, 0}};
 
+/**
+ * Storage
+ */
+// fileID to <file, file_len> pair
+std::unordered_map<fileID, std::pair<char*, int>> file_map;
+// fileID to <pid, wait_count> pair
+std::unordered_map<fileID, std::pair<int, int>> confirmation_waiting_map;
+
 void HandleJoinMessage(int src, int dest, const void *msg, int len);
 void HandleJoinResponseMessage(int src, int dest, const void *msg, int len);
 void RingSearch(int src, int sequence_number, int hop_count);
 void HandleFloodMessage(int src, int dest, const void *msg, int len);
 void HandleFloodResponseMessage(int src, int dest, const void *msg, int len);
 void HandleExchangeMessage(int src, int dest, const void *msg, int len);
+void HandleInsertMessage(int src, int dest, const void *msg, int len);
+void HandleReplicateMessage(int src, int dest, const void *msg, int len);
+void HandleLookupMessage(int src, int dest, const void *msg, int len);
+
+void Route(int src, nodeID dest, const void *msg, int len, int type);
 
 unsigned short Distance(nodeID x, nodeID y);
 void UpdateLeafSet(nodeID id, int src);
@@ -109,6 +124,58 @@ void HandleMessage(int src, int dest, const void *msg, int len) {
             HandleExchangeMessage(src, dest, msg, len);
             break;
         }
+        case INSERT: {
+            HandleInsertMessage(src, dest, msg, len);
+            break;
+        }
+        case INSERT_CONFIRM: {
+            TracePrintf(10, "Received insert confirmation message from %d\n", src);
+            // forward confirmation
+            int status = 0;
+            DeliverMessage(src, GetPid(), &status, sizeof(int));
+            break;
+        }
+        case REPLICATE: {
+            HandleReplicateMessage(src, dest, msg, len);
+            break;
+        }
+        case REPLICATE_CONFIRM: {
+            TracePrintf(10, "Received replicate confirmation message from %d\n", src);
+            ReplicateConfirmMessage* message = (ReplicateConfirmMessage*) msg;
+            TracePrintf(10, "Still need %d confirmations\n", confirmation_waiting_map[message->fid].second - 1);
+            if (--(confirmation_waiting_map[message->fid].second) == 0) {
+                // send insert confirmation message
+                Message* reply = new Message(INSERT_CONFIRM);
+                if (TransmitMessage(GetPid(), confirmation_waiting_map[message->fid].first, reply, sizeof(Message)) < 0) {
+                    std::cerr << "Fail to send insert confirmation from "
+                              << GetPid() << " to " << confirmation_waiting_map[message->fid].first << std::endl;
+                }
+                delete reply;
+            }
+            break;
+        }
+        case LOOK_UP: {
+            HandleLookupMessage(src, dest, msg, len);
+            break;
+        }
+        case LOOK_UP_RES: {
+            TracePrintf(10, "Received insert response from %d\n", src);
+            int status = 0;
+            if (len > data_message_header_size) {
+                // we get the file
+                int file_len = len - data_message_header_size;
+                status = file_len;
+                char* buf = new char[file_len];
+                ParseDataMessageContent(msg, len, buf, file_len);
+                DeliverMessage(src, dest, &status, sizeof(int));
+                DeliverMessage(src, dest, buf, file_len);
+                delete[] buf;
+            } else {
+                status = 0;
+                DeliverMessage(src, dest, &status, sizeof(int));
+            }
+            break;
+        }
         default:
             std::cerr << "Unknown message type: " << message->type << std::endl;
             break;
@@ -126,34 +193,7 @@ void HandleJoinMessage(int src, int dest, const void *msg, int len) {
     } else {
         // this is the join message from some other node that is
         // not in the overlay network. Route it.
-        int next_hop = GetPid();
-        unsigned short min_diff = Distance(message->id, node_id);
-        for (Entry e : leaf_set) {
-            if (e.pid > 0 && Distance(e.id, message->id) < min_diff) {
-                next_hop = e.pid;
-            }
-        }
-        if (next_hop == GetPid()) {
-            // current node is the closest node
-            // reply to this join message
-            JoinResponseMessage* reply = new JoinResponseMessage(node_id, leaf_set);
-            if (TransmitMessage(GetPid(), src, reply, sizeof(JoinResponseMessage)) < 0) {
-                std::cerr << "Fail to send join response message from "
-                          << GetPid() << " to " << src << std::endl;
-            }
-            delete reply;
-
-            // then update my leaf set since I see a new node
-            // this has to be done after sending the reply because otherwise
-            // the new node might see itself in the leaf set
-            UpdateLeafSet(message->id, src);
-        } else {
-            // forward join message to next node
-            if (TransmitMessage(src, next_hop, msg, len) < 0) {
-                std::cerr << "Fail to forward join message from "
-                          << src << " to " << next_hop << std::endl;
-            }
-        }
+        Route(src, message->id, msg, len, JOIN);
     }
 }
 
@@ -164,6 +204,7 @@ void HandleJoinResponseMessage(int src, int dest, const void *msg, int len) {
         JoinResponseMessage* message = (JoinResponseMessage*) msg;
         joined_overlay_network = true;
         std::copy(message->leaf_set, message->leaf_set + P2P_LEAF_SIZE, leaf_set);
+        std::cerr << GetPid() << " joined by attaching to " << src << std::endl;
     }
 }
 
@@ -232,7 +273,147 @@ void HandleExchangeMessage(int src, int dest, const void *msg, int len) {
     for (Entry e : message->leaf_set) {
         UpdateLeafSet(e.id, e.pid);
     }
-    PrintLeafSet();
+    // PrintLeafSet();
+}
+
+void HandleInsertMessage(int src, int dest, const void *msg, int len) {
+    TracePrintf(10, "Received insert message from %d\n", src);
+    fileID fid = 0;
+    ParseDataMessageHeader(msg, len, &fid);
+    Route(src, fid, msg, len, INSERT);
+}
+
+void HandleReplicateMessage(int src, int dest, const void *msg, int len) {
+    TracePrintf(10, "Received replicate message from %d\n", src);
+    fileID fid = 0;
+    ParseDataMessageHeader(msg, len, &fid);
+    int file_len = len - data_message_header_size;
+    char* data = new char[file_len];
+    ParseDataMessageContent(msg, len, data, file_len);
+    if (file_map.find(fid) != file_map.end()) {
+        // free existing file
+        char* old_file = file_map[fid].first;
+        delete[] old_file;
+        file_map.erase(fid); // this is probably not needed
+    }
+    file_map[fid] = std::make_pair(data, file_len);
+    TracePrintf(10, "Store(replicate) file %d of size %d at pid: %d nodeID: %d content: %s\n",
+                fid, file_len, GetPid(), node_id, data);
+    ReplicateConfirmMessage* message = new ReplicateConfirmMessage(fid);
+    if (TransmitMessage(GetPid(), src, message, sizeof(Message)) < 0) {
+        std::cerr << "Fail to send replicate confirmation from "
+                  << GetPid() << " to " << src << std::endl;
+    }
+    delete[] message;
+}
+
+void HandleLookupMessage(int src, int dest, const void *msg, int len) {
+    TracePrintf(10, "Received lookup message from %d\n", src);
+    LookupMessage* message = (LookupMessage*) msg;
+    Route(src, message->fid, msg, len, LOOK_UP);
+}
+
+void Route(int src, nodeID dest, const void *msg, int len, int type) {
+    int next_hop = GetPid();
+    unsigned short min_diff = Distance(dest, node_id);
+    for (Entry e : leaf_set) {
+        if (e.pid > 0 && Distance(e.id, dest) < min_diff) {
+            next_hop = e.pid;
+        }
+    }
+    if (next_hop == GetPid()) {
+        // current node is the closest node
+        // handle this message
+        switch (type) {
+        case JOIN: {
+            // reply to new node's join request
+            JoinResponseMessage* reply = new JoinResponseMessage(node_id, leaf_set);
+            if (TransmitMessage(GetPid(), src, reply, sizeof(JoinResponseMessage)) < 0) {
+                std::cerr << "Fail to send join response message from "
+                          << GetPid() << " to " << src << std::endl;
+            }
+            delete reply;
+
+            // then update my leaf set since I see a new node
+            // this has to be done after sending the reply because otherwise
+            // the new node might see itself in the leaf set
+            UpdateLeafSet(dest, src);
+            break;
+        }
+        case INSERT: {
+            // store the file
+            int file_len = len - data_message_header_size;
+            char* data = new char[file_len];
+            ParseDataMessageContent(msg, len, data, file_len);
+            if (file_map.find(dest) != file_map.end()) {
+                // free existing file
+                char* old_file = file_map[dest].first;
+                delete[] old_file;
+                file_map.erase(dest); // this is probably not needed
+            }
+            file_map[dest] = std::make_pair(data, file_len);
+
+            // send copy to 2 other node
+            char* message = MakeDataMessage(dest, data, file_len, REPLICATE);
+            int left_neighbor = leaf_set[P2P_LEAF_SIZE / 2 - 1].pid;
+            int right_neighbor = leaf_set[P2P_LEAF_SIZE / 2].pid;
+            TracePrintf(10, "Store file %d of size %d at pid: %d nodeID: %d content: %s\n",
+                        dest, file_len, GetPid(), node_id, data);
+            int num_replicate = 0;
+            if (left_neighbor != 0) {
+                num_replicate++;
+                if (TransmitMessage(GetPid(), left_neighbor, message, len) < 0) {
+                    std::cerr << "Fail to forward file message from "
+                              << src << " to " << left_neighbor << std::endl;
+                }
+            }
+            if (right_neighbor != 0) {
+                num_replicate++;
+                if (TransmitMessage(GetPid(), right_neighbor, message, len) < 0) {
+                    std::cerr << "Fail to forward file message from "
+                              << src << " to " << right_neighbor << std::endl;
+                }
+            }
+            TracePrintf(10, "Send %d replicates to neighbor\n", num_replicate);
+            confirmation_waiting_map[dest] = std::make_pair(src, num_replicate);
+            delete[] message;
+            break;
+        }
+        case LOOK_UP: {
+            LookupMessage* message = (LookupMessage*) msg;
+            fileID fid = message->fid;
+            int buf_len = message->len;
+            if (file_map.find(fid) != file_map.end()) {
+                // send back the found file
+                int content_len = std::min(buf_len, file_map[fid].second);
+                char* reply = MakeDataMessage(fid, file_map[fid].first, content_len, LOOK_UP_RES);
+                if (TransmitMessage(GetPid(), src, reply,
+                                    data_message_header_size + content_len) < 0) {
+                    std::cerr << "Fail to reply to look up message from " << src << std::endl;
+                }
+                delete[] reply;
+            } else {
+                // we don't have the file, send back response message without content
+                char* reply = MakeDataMessage(fid, file_map[fid].first, 0, LOOK_UP_RES);
+                if (TransmitMessage(GetPid(), src, reply,
+                                    data_message_header_size + buf_len * sizeof(char)) < 0) {
+                    std::cerr << "Fail to reply to look up message from " << src << std::endl;
+                }
+                delete[] reply;
+            }
+            break;
+        }
+        default: {
+            std::cerr << "Unknown message type to route: " << type << std::endl;
+        }
+        }
+    } else {
+        // forward message to next node
+        if (TransmitMessage(src, next_hop, msg, len) < 0) {
+            std::cerr << "Fail to forward join message from "
+                      << src << " to " << next_hop << std::endl;
+        }
+    }
 }
 
 unsigned short Distance(nodeID x, nodeID y) {
@@ -264,7 +445,7 @@ void UpdateLeafSet(nodeID id, int src) {
             leaf_set[index].id = id;
             leaf_set[index].pid = src;
         }
-    } else {
+    } else if (id > node_id) {
         for (int i = P2P_LEAF_SIZE / 2; i < P2P_LEAF_SIZE; i++) {
             if (leaf_set[i].pid == 0 || leaf_set[i].id > id) {
                 index = i;

@@ -30,7 +30,7 @@ PUBDIR = /clear/courses/comp420/pub
 CPPFLAGS = -std=c++11 -I$(PUBDIR)/include
 CFLAGS = -Wall
 
-LIBS = $(PUBDIR)/lib/libusr420.so overlay.o
+LIBS = $(PUBDIR)/lib/libusr420.so overlay.o message.o
 LDFLAGS = -Wl,-rpath=$(PUBDIR)/lib
 
 all: $(ALL)
