@@ -20,8 +20,9 @@ const int LOOK_UP = 10;
 const int LOOK_UP_RES = 11;
 const int RECLAIM = 12;
 const int RECLAIM_CONFIRM = 13;
-const int RECLAIM_REPLICATE = 14;
-const int RECLAIM_REPLICATE_CONFIRM = 15;
+const int RECLAIM_FAIL = 14;
+const int RECLAIM_REPLICATE = 15;
+const int RECLAIM_REPLICATE_CONFIRM = 16;
 
 const int data_message_header_size = sizeof(int) + sizeof(fileID);
 

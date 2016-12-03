@@ -68,26 +68,25 @@
 nodeID Nid;
 int Idx;
 
-#define	FID1	0x1111
+#define FID1    0x1111
 char data1[] = "data 1 string";
 
-#define	FID2	0x9999
+#define FID2    0x9999
 char data2[] = "DATA 2 LONGER STRING";
 
-char buff[P2P_FILE_MAXSIZE];	/* largest enough for any file  */
+char buff[P2P_FILE_MAXSIZE];    /* largest enough for any file  */
 
 int
-main(int argc, char **argv)
-{
+main(int argc, char **argv) {
     int status;
 
     if (argc < 2) {
-	fprintf(stderr,
-	    "Process index argument missing: run with ## on command line.\n");
-	exit(1);
+        fprintf(stderr,
+                "Process index argument missing: run with ## on command line.\n");
+        exit(1);
     }
 
-    Idx = atoi(argv[1]);	/* number from 0 to 31 */
+    Idx = atoi(argv[1]);    /* number from 0 to 31 */
     Nid = GetNodeID();
 
     fprintf(stderr, "Pid %d nodeID %04x index %d\n", GetPid(), Nid, Idx);
@@ -102,17 +101,17 @@ main(int argc, char **argv)
      *  forwarding including an expanding ring search.
      */
     if (Idx != 0) {
-	fprintf(stderr, "Process Idx %d is sleeping before Join\n", Idx);
-	MilliSleep(25*1000);
+        fprintf(stderr, "Process Idx %d is sleeping before Join\n", Idx);
+        MilliSleep(25 * 1000);
     }
     status = Join(Nid);
     if (status != 0) {
-	fprintf(stderr, "ERROR: Join returned %d!\n", status);
-	exit(1);
+        fprintf(stderr, "ERROR: Join returned %d!\n", status);
+        exit(1);
     }
     if (Idx == 0) {
-	fprintf(stderr, "Process Idx %d is sleeping after Join\n", Idx);
-	MilliSleep(25*1000);
+        fprintf(stderr, "Process Idx %d is sleeping after Join\n", Idx);
+        MilliSleep(25 * 1000);
     }
 
     /*
@@ -124,7 +123,7 @@ main(int argc, char **argv)
      *  for a user process that starts right at the end of the
      *  20-second startup window).
      */
-    MilliSleep(25*1000);
+    MilliSleep(25 * 1000);
 
     /*
      *  Finally, we do a sequence of P2P storage operations:
@@ -150,70 +149,70 @@ main(int argc, char **argv)
      */
 
     if (Idx == 5) {
-	/*
-	 *  Insert two different files, both with fileIDs FID1.
-	 *  The Insert operation should return 0 on success.
-	 */
-	status = Insert(FID1, data1, sizeof(data1));
-	if (status != 0) {
-	    fprintf(stderr, "ERROR: Insert 1 returned %d!\n", status);
-	    exit(1);
-	}
-	/* Note that this uses FID1, not FID2 */
-	status = Insert(FID1, data2, sizeof(data2));
-	if (status != 0) {
-	    fprintf(stderr, "ERROR: Insert 2 returned %d!\n", status);
-	    exit(1);
-	}
-	fprintf(stderr, "There will be a delay before the Lookup tests...\n");
+        /*
+         *  Insert two different files, both with fileIDs FID1.
+         *  The Insert operation should return 0 on success.
+         */
+        status = Insert(FID1, data1, sizeof(data1));
+        if (status != 0) {
+            fprintf(stderr, "ERROR: Insert 1 returned %d!\n", status);
+            exit(1);
+        }
+        /* Note that this uses FID1, not FID2 */
+        status = Insert(FID1, data2, sizeof(data2));
+        if (status != 0) {
+            fprintf(stderr, "ERROR: Insert 2 returned %d!\n", status);
+            exit(1);
+        }
+        fprintf(stderr, "There will be a delay before the Lookup tests...\n");
     }
 
-    MilliSleep(25*1000);	/* allow both Inserts to finish first */
+    MilliSleep(25 * 1000);  /* allow both Inserts to finish first */
 
     if (Idx == 12) {
-	/*
-	 *  Lookup the two different files we inserted above.
-	 *  The Lookup operation should return the length of the
-	 *  data on success.
-	 */
-	status = Lookup(FID1, buff, sizeof(buff));
-	if (status != sizeof(data1)) {
-	    fprintf(stderr, "ERROR: Lookup 1 returned %d!\n", status);
-	    exit(1);
-	}
-	if (strcmp(buff, data2) != 0) {
-	    fprintf(stderr, "ERROR: Lookup 1 returned wrong data!\n");
-	    exit(1);
-	}
-	status = Lookup(FID2, buff, sizeof(buff));
-	if (status >= 0) {
-	    fprintf(stderr, "ERROR: Lookup 2 didn't return error!\n");
-	    exit(1);
-	}
-	fprintf(stderr, "There will be a delay before the Reclaim tests...\n");
+        /*
+         *  Lookup the two different files we inserted above.
+         *  The Lookup operation should return the length of the
+         *  data on success.
+         */
+        status = Lookup(FID1, buff, sizeof(buff));
+        if (status != sizeof(data2)) {
+            fprintf(stderr, "ERROR: Lookup 1 returned %d!\n", status);
+            exit(1);
+        }
+        if (strcmp(buff, data2) != 0) {
+            fprintf(stderr, "ERROR: Lookup 1 returned wrong data!\n");
+            exit(1);
+        }
+        status = Lookup(FID2, buff, sizeof(buff));
+        if (status >= 0) {
+            fprintf(stderr, "ERROR: Lookup 2 didn't return error!\n");
+            exit(1);
+        }
+        fprintf(stderr, "There will be a delay before the Reclaim tests...\n");
     }
 
-    MilliSleep(25*1000);	/* allow both Lookups to finish too */
+    MilliSleep(25 * 1000);  /* allow both Lookups to finish too */
 
     if (Idx == 1) {
-	/*
-	 *  Reclaim the two different files we inserted above.
-	 *  The Reclaim operation should return 0 on success.
-	 */
-	status = Reclaim(FID1);
-	if (status != 0) {
-	    fprintf(stderr, "ERROR: Reclaim 1 returned %d!\n", status);
-	    exit(1);
-	}
-	status = Reclaim(FID2);
-	if (status >= 0) {
-	    fprintf(stderr, "ERROR: Reclaim 2 didn't return error!\n");
-	    exit(1);
-	}
-	fprintf(stderr, "There will be a delay before the exit...\n");
+        /*
+         *  Reclaim the two different files we inserted above.
+         *  The Reclaim operation should return 0 on success.
+         */
+        status = Reclaim(FID1);
+        if (status != 0) {
+            fprintf(stderr, "ERROR: Reclaim 1 returned %d!\n", status);
+            exit(1);
+        }
+        status = Reclaim(FID2);
+        if (status >= 0) {
+            fprintf(stderr, "ERROR: Reclaim 2 didn't return error!\n");
+            exit(1);
+        }
+        fprintf(stderr, "There will be a delay before the exit...\n");
     }
 
-    MilliSleep(25*1000);	/* allow both Reclaims to also finish */
+    MilliSleep(25 * 1000); /* allow both Reclaims to also finish */
 
     /*
      *  Now all the test operations should be done across all

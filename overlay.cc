@@ -63,7 +63,8 @@ int Lookup(fileID fid, void* contents, int len) {
         std::cerr << "Fail to receive confirmation message for lookup" << std::endl;
     }
 
-    if (status == 0) {
+    if (status < 0) {
+        TracePrintf(10, "Failed looking up file %hu\n", fid);
         return status;
     }
 

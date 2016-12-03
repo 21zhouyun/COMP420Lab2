@@ -23,7 +23,7 @@
 #  in this Makefile, other than replacing the "???" as described above.
 CC=g++
 
-ALL = store1
+ALL = store1 store2
 
 PUBDIR = /clear/courses/comp420/pub
 
