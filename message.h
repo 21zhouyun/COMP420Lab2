@@ -11,16 +11,17 @@ const int JOIN_RES = 1;
 const int FLOOD = 2;
 const int FLOOD_RES = 3;
 const int EXCHANGE = 4;
-const int INSERT = 5;
-const int INSERT_CONFIRM = 6;
-const int REPLICATE = 7;
-const int REPLICATE_CONFIRM = 8;
-const int LOOK_UP = 9;
-const int LOOK_UP_RES = 10;
-const int RECLAIM = 11;
-const int RECLAIM_CONFIRM = 12;
-const int RECLAIM_REPLICATE = 13;
-const int RECLAIM_REPLICATE_CONFIRM = 14;
+const int EXCHANGE_RES = 5;
+const int INSERT = 6;
+const int INSERT_CONFIRM = 7;
+const int REPLICATE = 8;
+const int REPLICATE_CONFIRM = 9;
+const int LOOK_UP = 10;
+const int LOOK_UP_RES = 11;
+const int RECLAIM = 12;
+const int RECLAIM_CONFIRM = 13;
+const int RECLAIM_REPLICATE = 14;
+const int RECLAIM_REPLICATE_CONFIRM = 15;
 
 const int data_message_header_size = sizeof(int) + sizeof(fileID);
 
@@ -55,6 +56,13 @@ struct ExchangeMessage {
     nodeID id;
     Entry leaf_set[P2P_LEAF_SIZE];
     ExchangeMessage(nodeID node_id, Entry other_leaf_set[P2P_LEAF_SIZE]);
+};
+
+struct ExchangeResponseMessage {
+    int type;
+    nodeID id;
+    Entry leaf_set[P2P_LEAF_SIZE];
+    ExchangeResponseMessage(nodeID node_id, Entry other_leaf_set[P2P_LEAF_SIZE]);
 };
 
 struct FloodMessage {

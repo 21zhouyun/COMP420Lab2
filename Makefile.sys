@@ -40,4 +40,5 @@ kernel: kernel.o message.o
 $(ALL): $(LIBS)
 
 clean:
+	rm *.o
 	rm -f $(ALL)

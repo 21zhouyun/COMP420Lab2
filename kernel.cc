@@ -53,6 +53,7 @@ void RingSearch(int src, int sequence_number, int hop_count);
 void HandleFloodMessage(int src, int dest, const void *msg, int len);
 void HandleFloodResponseMessage(int src, int dest, const void *msg, int len);
 void HandleExchangeMessage(int src, int dest, const void *msg, int len);
+void HandleExchangeResponseMessage(int src, int dest, const void *msg, int len);
 void HandleInsertMessage(int src, int dest, const void *msg, int len);
 void HandleReplicateMessage(int src, int dest, const void *msg, int len);
 void HandleLookupMessage(int src, int dest, const void *msg, int len);
@@ -124,6 +125,10 @@ void HandleMessage(int src, int dest, const void *msg, int len) {
         }
         case EXCHANGE: {
             HandleExchangeMessage(src, dest, msg, len);
+            break;
+        }
+        case EXCHANGE_RES: {
+            HandleExchangeResponseMessage(src, dest, msg, len);
             break;
         }
         case INSERT: {
@@ -303,12 +308,30 @@ void HandleFloodResponseMessage(int src, int dest, const void *msg, int len) {
 void HandleExchangeMessage(int src, int dest, const void *msg, int len) {
     TracePrintf(10, "Received exchange message from %d\n", src);
     ExchangeMessage* message = (ExchangeMessage*) msg;
+    // send back reply before update
+    ExchangeResponseMessage* reply = new ExchangeResponseMessage(node_id, leaf_set);
+    if (TransmitMessage(GetPid(), src, reply, sizeof(ExchangeResponseMessage)) < 0) {
+        std::cerr << "Fail to send exchange reply from " << GetPid()
+                  << " to " << src << std::endl;
+    }
+    delete reply;
+
     //Update leaf set based on the information
     UpdateLeafSet(message->id, src);
     for (Entry e : message->leaf_set) {
         UpdateLeafSet(e.id, e.pid);
     }
-    PrintLeafSet();
+    // PrintLeafSet();
+}
+
+void HandleExchangeResponseMessage(int src, int dest, const void *msg, int len) {
+    TracePrintf(10, "Received exchange response message from %d\n", src);
+    ExchangeMessage* message = (ExchangeMessage*) msg;
+    //Update leaf set based on the information
+    UpdateLeafSet(message->id, src);
+    for (Entry e : message->leaf_set) {
+        UpdateLeafSet(e.id, e.pid);
+    }
 }
 
 void HandleInsertMessage(int src, int dest, const void *msg, int len) {

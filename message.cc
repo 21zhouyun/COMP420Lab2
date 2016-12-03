@@ -16,6 +16,11 @@ ExchangeMessage::ExchangeMessage(nodeID node_id, Entry other_leaf_set[P2P_LEAF_S
     std::copy(other_leaf_set, other_leaf_set + P2P_LEAF_SIZE, leaf_set);
 }
 
+ExchangeResponseMessage::ExchangeResponseMessage(nodeID node_id, Entry other_leaf_set[P2P_LEAF_SIZE]):
+    type(EXCHANGE_RES), id(node_id) {
+    std::copy(other_leaf_set, other_leaf_set + P2P_LEAF_SIZE, leaf_set);
+}
+
 char* MakeDataMessage(fileID fid, void* contents, int len, int type) {
     int offset = 0;
     char* message = new char[data_message_header_size + len * sizeof(char)];
