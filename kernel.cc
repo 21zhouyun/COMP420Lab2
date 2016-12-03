@@ -56,6 +56,8 @@ void HandleExchangeMessage(int src, int dest, const void *msg, int len);
 void HandleInsertMessage(int src, int dest, const void *msg, int len);
 void HandleReplicateMessage(int src, int dest, const void *msg, int len);
 void HandleLookupMessage(int src, int dest, const void *msg, int len);
+void HandleReclaimMessage(int src, int dest, const void *msg, int len);
+void HandleReclaimReplicateMessage(int src, int dest, const void *msg, int len);
 
 void Route(int src, nodeID dest, const void *msg, int len, int type);
 
@@ -142,10 +144,12 @@ void HandleMessage(int src, int dest, const void *msg, int len) {
         case REPLICATE_CONFIRM: {
             TracePrintf(10, "Received replicate confirmation message from %d\n", src);
             ReplicateConfirmMessage* message = (ReplicateConfirmMessage*) msg;
-            TracePrintf(10, "Still need %d confirmations\n", confirmation_waiting_map[message->fid].second - 1);
-            if (--(confirmation_waiting_map[message->fid].second) == 0) {
+            confirmation_waiting_map[message->fid].second--;
+            TracePrintf(10, "Still need %d confirmations\n", confirmation_waiting_map[message->fid].second);
+            if (confirmation_waiting_map[message->fid].second == 0) {
                 // send insert confirmation message
                 Message* reply = new Message(INSERT_CONFIRM);
+                TracePrintf(10, "Send insert confirm from %d to %d\n", GetPid(), confirmation_waiting_map[message->fid].first);
                 if (TransmitMessage(GetPid(), confirmation_waiting_map[message->fid].first, reply, sizeof(Message)) < 0) {
                     std::cerr << "Fail to send insert confirmation from "
                               << GetPid() << " to " << confirmation_waiting_map[message->fid].first << std::endl;
@@ -159,7 +163,7 @@ void HandleMessage(int src, int dest, const void *msg, int len) {
             break;
         }
         case LOOK_UP_RES: {
-            TracePrintf(10, "Received insert response from %d\n", src);
+            TracePrintf(10, "Received look up response from %d of length %d\n", src, len);
             int status = 0;
             if (len > data_message_header_size) {
                 // we get the file
@@ -173,6 +177,36 @@ void HandleMessage(int src, int dest, const void *msg, int len) {
             } else {
                 status = 0;
                 DeliverMessage(src, dest, &status, sizeof(int));
+            }
+            break;
+        }
+        case RECLAIM: {
+            HandleReclaimMessage(src, dest, msg, len);
+            break;
+        }
+        case RECLAIM_CONFIRM: {
+            TracePrintf(10, "Received reclaim confirmation message from %d\n", src);
+            // forward confirmation
+            int status = 0;
+            DeliverMessage(src, GetPid(), &status, sizeof(int));
+            break;
+        }
+        case RECLAIM_REPLICATE: {
+            HandleReclaimReplicateMessage(src, dest, msg, len);
+            break;
+        }
+        case RECLAIM_REPLICATE_CONFIRM: {
+            TracePrintf(10, "Received reclaim replicate confirmation message from %d\n", src);
+            FileMessage* message = (FileMessage*) msg;
+            TracePrintf(10, "Still need %d confirmations\n", confirmation_waiting_map[message->fid].second - 1);
+            if (--(confirmation_waiting_map[message->fid].second) == 0) {
+                // send reclaim confirmation message
+                Message* reply = new Message(RECLAIM_CONFIRM);
+                if (TransmitMessage(GetPid(), confirmation_waiting_map[message->fid].first, reply, sizeof(Message)) < 0) {
+                    std::cerr << "Fail to send reclaim confirmation from "
+                              << GetPid() << " to " << confirmation_waiting_map[message->fid].first << std::endl;
+                }
+                delete reply;
             }
             break;
         }
@@ -204,6 +238,7 @@ void HandleJoinResponseMessage(int src, int dest, const void *msg, int len) {
         JoinResponseMessage* message = (JoinResponseMessage*) msg;
         joined_overlay_network = true;
         std::copy(message->leaf_set, message->leaf_set + P2P_LEAF_SIZE, leaf_set);
+        UpdateLeafSet(message->id, src);
         std::cerr << GetPid() << " joined by attaching to " << src << std::endl;
     }
 }
@@ -273,7 +308,7 @@ void HandleExchangeMessage(int src, int dest, const void *msg, int len) {
     for (Entry e : message->leaf_set) {
         UpdateLeafSet(e.id, e.pid);
     }
-    // PrintLeafSet();
+    PrintLeafSet();
 }
 
 void HandleInsertMessage(int src, int dest, const void *msg, int len) {
@@ -313,6 +348,32 @@ void HandleLookupMessage(int src, int dest, const void *msg, int len) {
     Route(src, message->fid, msg, len, LOOK_UP);
 }
 
+void HandleReclaimMessage(int src, int dest, const void *msg, int len) {
+    TracePrintf(10, "Received reclaim message from %d\n", src);
+    FileMessage* message = (FileMessage*) msg;
+    Route(src, message->fid, msg, len, RECLAIM);
+}
+
+void HandleReclaimReplicateMessage(int src, int dest, const void *msg, int len) {
+    TracePrintf(10, "Received reclaim replicate message from %d\n", src);
+    FileMessage* message = (FileMessage*) msg;
+    fileID fid = message->fid;
+    if (file_map.find(fid) != file_map.end()) {
+        // free existing file
+        TracePrintf(10 , "Find file %hu to reclaim at %d\n", fid, GetPid());
+        char* old_file = file_map[dest].first;
+        delete[] old_file;
+        file_map.erase(dest); // this is probably not needed
+    }
+    // send back confirmation
+    FileMessage* reply = new FileMessage(RECLAIM_REPLICATE_CONFIRM, fid);
+    if (TransmitMessage(GetPid(), src, reply, sizeof(FileMessage)) < 0) {
+        std::cerr << "Fail to send reclaim replicate confirmation"
+                  << " from " << GetPid() << " to " << src;
+    }
+    delete reply;
+}
+
 void Route(int src, nodeID dest, const void *msg, int len, int type) {
     int next_hop = GetPid();
     unsigned short min_diff = Distance(dest, node_id);
@@ -342,40 +403,41 @@ void Route(int src, nodeID dest, const void *msg, int len, int type) {
         }
         case INSERT: {
             // store the file
+            fileID fid = (fileID) dest;
             int file_len = len - data_message_header_size;
             char* data = new char[file_len];
             ParseDataMessageContent(msg, len, data, file_len);
-            if (file_map.find(dest) != file_map.end()) {
+            if (file_map.find(fid) != file_map.end()) {
                 // free existing file
-                char* old_file = file_map[dest].first;
+                char* old_file = file_map[fid].first;
                 delete[] old_file;
-                file_map.erase(dest); // this is probably not needed
+                file_map.erase(fid); // this is probably not needed
             }
-            file_map[dest] = std::make_pair(data, file_len);
+            TracePrintf(10, "Store file %d of size %d at pid: %d nodeID: %d content: %s\n",
+                        fid, file_len, GetPid(), node_id, data);
+            file_map[fid] = std::make_pair(data, file_len);
 
             // send copy to 2 other node
-            char* message = MakeDataMessage(dest, data, file_len, REPLICATE);
+            char* message = MakeDataMessage(fid, data, file_len, REPLICATE);
             int left_neighbor = leaf_set[P2P_LEAF_SIZE / 2 - 1].pid;
             int right_neighbor = leaf_set[P2P_LEAF_SIZE / 2].pid;
-            TracePrintf(10, "Store file %d of size %d at pid: %d nodeID: %d content: %s\n",
-                        dest, file_len, GetPid(), node_id, data);
             int num_replicate = 0;
             if (left_neighbor != 0) {
                 num_replicate++;
                 if (TransmitMessage(GetPid(), left_neighbor, message, len) < 0) {
-                    std::cerr << "Fail to forward file message from "
+                    std::cerr << "Fail to forward insert message from "
                               << src << " to " << left_neighbor << std::endl;
                 }
             }
             if (right_neighbor != 0) {
                 num_replicate++;
                 if (TransmitMessage(GetPid(), right_neighbor, message, len) < 0) {
-                    std::cerr << "Fail to forward file message from "
+                    std::cerr << "Fail to forward insert message from "
                               << src << " to " << right_neighbor << std::endl;
                 }
             }
             TracePrintf(10, "Send %d replicates to neighbor\n", num_replicate);
-            confirmation_waiting_map[dest] = std::make_pair(src, num_replicate);
+            confirmation_waiting_map[fid] = std::make_pair(src, num_replicate);
             delete[] message;
             break;
         }
@@ -385,22 +447,60 @@ void Route(int src, nodeID dest, const void *msg, int len, int type) {
             int buf_len = message->len;
             if (file_map.find(fid) != file_map.end()) {
                 // send back the found file
-                int content_len = std::min(buf_len, file_map[fid].second);
-                char* reply = MakeDataMessage(fid, file_map[fid].first, content_len, LOOK_UP_RES);
+                int file_len = std::min(buf_len, file_map[fid].second);
+                TracePrintf(10, "Find file %d of size %d at pid: %d nodeID: %d content %s\n",
+                            fid, file_len, GetPid(), node_id, file_map[fid].first);
+                char* reply = MakeDataMessage(fid, file_map[fid].first, file_len, LOOK_UP_RES);
                 if (TransmitMessage(GetPid(), src, reply,
-                                    data_message_header_size + content_len) < 0) {
+                                    data_message_header_size + file_len) < 0) {
                     std::cerr << "Fail to reply to look up message from " << src << std::endl;
                 }
                 delete[] reply;
             } else {
                 // we don't have the file, send back response message without content
+                TracePrintf(10, "Cannot find file %d\n", fid);
                 char* reply = MakeDataMessage(fid, file_map[fid].first, 0, LOOK_UP_RES);
-                if (TransmitMessage(GetPid(), src, reply,
-                                    data_message_header_size + buf_len * sizeof(char)) < 0) {
+                if (TransmitMessage(GetPid(), src, reply, data_message_header_size) < 0) {
                     std::cerr << "Fail to reply to look up message from " << src << std::endl;
                 }
                 delete[] reply;
             }
+            break;
+        }
+        case RECLAIM: {
+            FileMessage* message = (FileMessage*) msg;
+            fileID fid = message->fid;
+            if (file_map.find(fid) != file_map.end()) {
+                // free existing file
+                TracePrintf(10 , "Find file %hu to reclaim at %d\n", fid, GetPid());
+                char* old_file = file_map[fid].first;
+                delete[] old_file;
+                file_map.erase(fid); // this is probably not needed
+            }
+            // send reclaim replicate to neighbor
+            FileMessage* reclaim_replicate_message = new FileMessage(RECLAIM_REPLICATE, fid);
+            int left_neighbor = leaf_set[P2P_LEAF_SIZE / 2 - 1].pid;
+            int right_neighbor = leaf_set[P2P_LEAF_SIZE / 2].pid;
+            int num_replicate = 0;
+            if (left_neighbor != 0) {
+                num_replicate++;
+                if (TransmitMessage(GetPid(), left_neighbor, reclaim_replicate_message, sizeof(FileMessage)) < 0) {
+                    std::cerr << "Fail to forward reclaim replicate message from "
+                              << src << " to " << left_neighbor << std::endl;
+                }
+            }
+            if (right_neighbor != 0) {
+                num_replicate++;
+                if (TransmitMessage(GetPid(), right_neighbor, reclaim_replicate_message, sizeof(FileMessage)) < 0) {
+                    std::cerr << "Fail to forward reclaim replicate message from "
+                              << src << " to " << right_neighbor << std::endl;
+                }
+            }
+            // TODO: Using the same map might result in some problem when one
+            // node is inserting a file and another node is reclaiming the same
+            // file.
+            confirmation_waiting_map[fid] = std::make_pair(src, num_replicate);
+            delete reclaim_replicate_message;
             break;
         }
         default: {
@@ -468,8 +568,8 @@ void UpdateLeafSet(nodeID id, int src) {
 }
 
 void PrintLeafSet() {
+    TracePrintf(10, "pid: %d, node_id: %d, leaf_set: ", GetPid(), node_id);
     for (Entry e : leaf_set) {
-        std::cerr << e << ",";
+        TracePrintf(10, "(%d, %d) ", e.id, e.pid);
     }
-    std::cerr << std::endl;
 }

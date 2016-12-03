@@ -17,6 +17,10 @@ const int REPLICATE = 7;
 const int REPLICATE_CONFIRM = 8;
 const int LOOK_UP = 9;
 const int LOOK_UP_RES = 10;
+const int RECLAIM = 11;
+const int RECLAIM_CONFIRM = 12;
+const int RECLAIM_REPLICATE = 13;
+const int RECLAIM_REPLICATE_CONFIRM = 14;
 
 const int data_message_header_size = sizeof(int) + sizeof(fileID);
 
@@ -71,6 +75,15 @@ struct LookupMessage {
     fileID fid;
     int len;
     LookupMessage(fileID file_id, int length): type(LOOK_UP), fid(file_id), len(length) {}
+};
+
+/**
+ * This message is used for difference steps of reclaiming a file based on the type given.
+ */
+struct FileMessage {
+    int type;
+    fileID fid;
+    FileMessage(int message_type, fileID file_id): type(message_type), fid(file_id) {}
 };
 
 /**

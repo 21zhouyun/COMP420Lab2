@@ -70,6 +70,7 @@ int Lookup(fileID fid, void* contents, int len) {
     if (ReceiveMessage(&src, contents, len) < 0) {
         std::cerr << "Fail to receive reply message for lookup" << std::endl;
     }
+    TracePrintf(10, "Done looking up file %hu\n", fid);
     return status;
 }
 
@@ -79,6 +80,16 @@ int Lookup(fileID fid, void* contents, int len) {
  * @return     status of reclaim
  */
 int Reclaim(fileID fid) {
-    // TODO
-    return 0;
+    TracePrintf(10, "Forward reclaim request\n");
+    int status = 0;
+    int src = 0;
+    FileMessage* message = new FileMessage(RECLAIM, fid);
+    SendMessage(0, message, sizeof(FileMessage));
+    delete message;
+
+    if (ReceiveMessage(&src, &status, sizeof(int)) < 0) {
+        std::cerr << "Fail to receive confirmation message for reclaim" << std::endl;
+    }
+    TracePrintf(10, "Done reclaiming file %hu\n", fid);
+    return status;
 }
