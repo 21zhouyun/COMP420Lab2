@@ -107,11 +107,18 @@ main(int argc, char **argv) {
     }
     if (Idx == 0) {
         fprintf(stderr, "Process Idx %d is sleeping after Join\n", Idx);
-        MilliSleep(25 * 1000);
+        MilliSleep(1000 * 1000);
     }
 
     fprintf(stderr, "leaf set should be static now\n");
-    MilliSleep(1000 * 1000); // for easy debug
+    if (Idx != 10) {
+        MilliSleep(1000 * 1000); // for easy debug
+    }
+
+    if (Idx == 10) {
+        MilliSleep(20 * 1000); // for easy debug
+        fprintf(stderr, "Process Idx %d is exiting\n", Idx);
+    }
 
     exit(0);
 }

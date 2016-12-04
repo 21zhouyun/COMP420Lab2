@@ -1,7 +1,3 @@
-Message header
-
-Hop Limited Flood Message
-int type,
-int sequence_number,
-int hop_count,
+Project structure
+kernel.cc:
 

@@ -40,7 +40,7 @@ const int RING_SIZE = 65536;
 
 Entry leaf_set[P2P_LEAF_SIZE] = {{0, 0}, {0, 0}, {0, 0}, {0, 0}};
 // nodes in leaf set where I haven't get response from an exchange message
-std::set<nodeID> pending_leaf_set;
+std::set<nodeID> dead_node;
 /**
  * Storage
  */
@@ -98,16 +98,13 @@ void HandleMessage(int src, int dest, const void *msg, int len) {
             }
             case NORMAL: {
                 // remove dead node from leaf set
-                // if (pending_leaf_set.size() > 0) {
-                //     for (nodeID id : pending_leaf_set) {
-                //         RemoveNodeFromLeafSet(id);
-                //     }
-                //     pending_leaf_set.clear();
-                // }
+                for (nodeID id : dead_node) {
+                    RemoveNodeFromLeafSet(id);
+                }
                 PrintLeafSet();
                 ExchangeMessage* message = new ExchangeMessage(node_id, leaf_set);
-                for (Entry e : leaf_set) {
-                    // pending_leaf_set.insert(e.id);
+                for (const auto &e : leaf_set) {
+                    dead_node.insert(e.id);
                     if (e.pid > 0 && TransmitMessage(GetPid(), e.pid, message, sizeof(ExchangeMessage)) < 0) {
                         std::cerr << "Fail to send exchange message from "
                                   << GetPid() << " to " << e.pid << std::endl;
@@ -360,15 +357,26 @@ void HandleExchangeMessage(int src, int dest, const void *msg, int len) {
 
     //Update leaf set based on the information
     UpdateLeafSet(message->id, src);
+
+    // we received an exchange message from a dead node
+    // bring it back to life
+    dead_node.erase(message->id);
+
     for (Entry e : message->leaf_set) {
-        UpdateLeafSet(e.id, e.pid);
+        // only update node we know that is not dead
+        // to avoid "ghost" effect where a removed node
+        // is added back from dated exchange message
+        // by other nodes
+        if (dead_node.find(e.id) == dead_node.end()) {
+            UpdateLeafSet(e.id, e.pid);
+        }
     }
 }
 
 void HandleExchangeResponseMessage(int src, int dest, const void *msg, int len) {
     TracePrintf(10, "Received exchange response message from %d\n", src);
     ExchangeResponseMessage* message = (ExchangeResponseMessage*) msg;
-    pending_leaf_set.erase(message->id);
+    dead_node.erase(message->id);
     //Update leaf set based on the information
     UpdateLeafSet(message->id, src);
     for (Entry e : message->leaf_set) {
@@ -443,7 +451,7 @@ void Route(int src, nodeID dest, const void *msg, int len, int type) {
     int next_hop = GetPid();
     // first treat dest as smaller than current node
     unsigned short min_distance = AbsoluteDistance(dest, node_id);
-    for (Entry e : leaf_set) {
+    for (const auto &e : leaf_set) {
         if (e.pid > 0 && AbsoluteDistance(e.id, dest) < min_distance) {
             next_hop = e.pid;
             min_distance = AbsoluteDistance(e.id, dest);
@@ -630,7 +638,7 @@ void UpdateLeafSet(nodeID id, int src) {
 
     // if id is already in leaf set, do nothing
     // this is slow for large leaf set
-    for (Entry e : leaf_set) {
+    for (const auto &e : leaf_set) {
         if (e.id == id) {
             return;
         }
@@ -695,7 +703,7 @@ void UpdateUpperLeafSet(nodeID id, int src) {
 
 void RemoveNodeFromLeafSet(nodeID id) {
     TracePrintf(10, "Remove dead node %04x from leaf set\n", id);
-    for (Entry e : leaf_set) {
+    for (auto &e : leaf_set) {
         if (e.id == id) {
             e.id = 0;
             e.pid = 0;
