@@ -17,12 +17,13 @@ const int INSERT_CONFIRM = 7;
 const int REPLICATE = 8;
 const int REPLICATE_CONFIRM = 9;
 const int LOOK_UP = 10;
-const int LOOK_UP_RES = 11;
-const int RECLAIM = 12;
-const int RECLAIM_CONFIRM = 13;
-const int RECLAIM_FAIL = 14;
-const int RECLAIM_REPLICATE = 15;
-const int RECLAIM_REPLICATE_CONFIRM = 16;
+const int LOOK_UP_CONFIRM = 11;
+const int LOOK_UP_FAIL = 12;
+const int RECLAIM = 13;
+const int RECLAIM_CONFIRM = 14;
+const int RECLAIM_FAIL = 15;
+const int RECLAIM_REPLICATE = 16;
+const int RECLAIM_REPLICATE_CONFIRM = 17;
 
 const int data_message_header_size = sizeof(int) + sizeof(fileID);
 

@@ -11,10 +11,17 @@
  */
 int Join(nodeID id) {
     TracePrintf(10, "Forward join request from nodeID %hu\n", id);
+    int status = 0;
+    int src = 0;
     JoinMessage* message = new JoinMessage(id);
     SendMessage(0, message, sizeof(message));
     delete message;
-    return 0;
+
+    if (ReceiveMessage(&src, &status, sizeof(int)) < 0) {
+        std::cerr << "Fail to receive confirmation message for join" << std::endl;
+    }
+    TracePrintf(10, "Done joining\n");
+    return status;
 }
 
 /**

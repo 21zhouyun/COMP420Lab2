@@ -7,6 +7,7 @@
 #include <array>
 #include <utility>
 #include <iterator>
+#include <set>
 
 #include "message.h"
 
@@ -35,10 +36,11 @@ int alarm_round = 0;
  */
 bool joined_overlay_network = false;
 nodeID node_id;
-const unsigned short RING_SIZE = 65535;
+const unsigned int RING_SIZE = 65536;
 
 Entry leaf_set[P2P_LEAF_SIZE] = {{0, 0}, {0, 0}, {0, 0}, {0, 0}};
-
+// nodes in leaf set where I haven't get response from an exchange message
+std::set<nodeID> pending_leaf_set;
 /**
  * Storage
  */
@@ -64,6 +66,9 @@ void Route(int src, nodeID dest, const void *msg, int len, int type);
 
 unsigned short Distance(nodeID x, nodeID y);
 void UpdateLeafSet(nodeID id, int src);
+void UpdateUpperLeafSet(nodeID id, int src);
+
+void RemoveNodeFromLeafSet(nodeID id);
 void PrintLeafSet();
 
 void HandleMessage(int src, int dest, const void *msg, int len) {
@@ -82,13 +87,25 @@ void HandleMessage(int src, int dest, const void *msg, int len) {
                     // we cannot find any existing node, assume we are the first node
                     mode = NORMAL;
                     joined_overlay_network = true;
+                    // confirm join
+                    int status = 0;
+                    DeliverMessage(src, GetPid(), &status, sizeof(int));
                     std::cerr << GetPid() << " joined network as first node" << std::endl;
                 }
                 break;
             }
             case NORMAL: {
+                // remove dead node from leaf set
+                // if (pending_leaf_set.size() > 0) {
+                //     for (nodeID id : pending_leaf_set) {
+                //         RemoveNodeFromLeafSet(id);
+                //     }
+                //     pending_leaf_set.clear();
+                // }
+                PrintLeafSet();
                 ExchangeMessage* message = new ExchangeMessage(node_id, leaf_set);
                 for (Entry e : leaf_set) {
+                    // pending_leaf_set.insert(e.id);
                     if (e.pid > 0 && TransmitMessage(GetPid(), e.pid, message, sizeof(ExchangeMessage)) < 0) {
                         std::cerr << "Fail to send exchange message from "
                                   << GetPid() << " to " << e.pid << std::endl;
@@ -173,22 +190,22 @@ void HandleMessage(int src, int dest, const void *msg, int len) {
             HandleLookupMessage(src, dest, msg, len);
             break;
         }
-        case LOOK_UP_RES: {
+        case LOOK_UP_CONFIRM: {
             TracePrintf(10, "Received look up response from %d of length %d\n", src, len);
             int status = 0;
-            if (len > data_message_header_size) {
-                // we get the file
-                int file_len = len - data_message_header_size;
-                status = file_len;
-                char* buf = new char[file_len];
-                ParseDataMessageContent(msg, len, buf, file_len);
-                DeliverMessage(src, dest, &status, sizeof(int));
-                DeliverMessage(src, dest, buf, file_len);
-                delete[] buf;
-            } else {
-                status = -1;
-                DeliverMessage(src, dest, &status, sizeof(int));
-            }
+            // we get the file
+            int file_len = len - data_message_header_size;
+            status = file_len;
+            char* buf = new char[file_len];
+            ParseDataMessageContent(msg, len, buf, file_len);
+            DeliverMessage(src, dest, &status, sizeof(int));
+            DeliverMessage(src, dest, buf, file_len);
+            delete[] buf;
+            break;
+        }
+        case LOOK_UP_FAIL: {
+            int status = -1;
+            DeliverMessage(src, dest, &status, sizeof(int));
             break;
         }
         case RECLAIM: {
@@ -263,6 +280,10 @@ void HandleJoinResponseMessage(int src, int dest, const void *msg, int len) {
         joined_overlay_network = true;
         std::copy(message->leaf_set, message->leaf_set + P2P_LEAF_SIZE, leaf_set);
         UpdateLeafSet(message->id, src);
+
+        // confirm join
+        int status = 0;
+        DeliverMessage(src, GetPid(), &status, sizeof(int));
         std::cerr << GetPid() << " joined by attaching to " << src << std::endl;
     }
 }
@@ -340,12 +361,12 @@ void HandleExchangeMessage(int src, int dest, const void *msg, int len) {
     for (Entry e : message->leaf_set) {
         UpdateLeafSet(e.id, e.pid);
     }
-    PrintLeafSet();
 }
 
 void HandleExchangeResponseMessage(int src, int dest, const void *msg, int len) {
     TracePrintf(10, "Received exchange response message from %d\n", src);
     ExchangeResponseMessage* message = (ExchangeResponseMessage*) msg;
+    pending_leaf_set.erase(message->id);
     //Update leaf set based on the information
     UpdateLeafSet(message->id, src);
     for (Entry e : message->leaf_set) {
@@ -418,12 +439,30 @@ void HandleReclaimReplicateMessage(int src, int dest, const void *msg, int len) 
 
 void Route(int src, nodeID dest, const void *msg, int len, int type) {
     int next_hop = GetPid();
-    unsigned short min_diff = Distance(dest, node_id);
-    for (Entry e : leaf_set) {
-        if (e.pid > 0 && Distance(e.id, dest) < min_diff) {
-            next_hop = e.pid;
+    // first treat dest as smaller than current node
+    unsigned short min_distance = Distance(dest, node_id);
+    for (int i = 0; i < P2P_LEAF_SIZE / 2; i++) {
+        Entry e = leaf_set[i];
+        if (e.pid > 0) {
+            int distance = std::min(Distance(dest, e.id), Distance(e.id, dest));
+            if (distance < min_distance) {
+                next_hop = e.pid;
+                min_distance = distance;
+            }
         }
     }
+    // then treat dest as larger than current node
+    for (int i = P2P_LEAF_SIZE / 2; i < P2P_LEAF_SIZE; i++) {
+        Entry e = leaf_set[i];
+        if (e.pid > 0) {
+            int distance = std::min(Distance(dest, e.id), Distance(e.id, dest));
+            if (distance < min_distance) {
+                next_hop = e.pid;
+                min_distance = distance;
+            }
+        }
+    }
+
     if (next_hop == GetPid()) {
         // current node is the closest node
         // handle this message
@@ -492,7 +531,7 @@ void Route(int src, nodeID dest, const void *msg, int len, int type) {
                 int file_len = std::min(buf_len, file_map[fid].second);
                 TracePrintf(10, "Find file %d of size %d at pid: %d nodeID: %04x content %s\n",
                             fid, file_len, GetPid(), node_id, file_map[fid].first);
-                char* reply = MakeDataMessage(fid, file_map[fid].first, file_len, LOOK_UP_RES);
+                char* reply = MakeDataMessage(fid, file_map[fid].first, file_len, LOOK_UP_CONFIRM);
                 if (TransmitMessage(GetPid(), src, reply,
                                     data_message_header_size + file_len) < 0) {
                     std::cerr << "Fail to reply to look up message from " << src << std::endl;
@@ -501,8 +540,8 @@ void Route(int src, nodeID dest, const void *msg, int len, int type) {
             } else {
                 // we don't have the file, send back response message without content
                 TracePrintf(10, "Cannot find file %d\n", fid);
-                char* reply = MakeDataMessage(fid, file_map[fid].first, 0, LOOK_UP_RES);
-                if (TransmitMessage(GetPid(), src, reply, data_message_header_size) < 0) {
+                Message* reply = new Message(LOOK_UP_FAIL);
+                if (TransmitMessage(GetPid(), src, reply, sizeof(Message)) < 0) {
                     std::cerr << "Fail to reply to look up message from " << src << std::endl;
                 }
                 delete[] reply;
@@ -550,7 +589,6 @@ void Route(int src, nodeID dest, const void *msg, int len, int type) {
                     std::cerr << "Fail to send reclaim fail message from "
                               << GetPid() << " to " << src << std::endl;
                 }
-
             }
             break;
         }
@@ -567,61 +605,106 @@ void Route(int src, nodeID dest, const void *msg, int len, int type) {
     }
 }
 
+/**
+ * The distance from x(smaller) to y(larger).
+ * @param  x [description]
+ * @param  y [description]
+ * @return   [description]
+ */
 unsigned short Distance(nodeID x, nodeID y) {
-    return std::min(std::abs(x - y), RING_SIZE - std::abs(x - y));
+    if (x <= y) {
+        return y - x;
+    } else {
+        return RING_SIZE - x + y;
+    }
 }
 
 void UpdateLeafSet(nodeID id, int src) {
     TracePrintf(10, "Update leaf set (%d,%d)\n", id, src);
-    // index of new id within the existing leaf set
-    int index = -1;
-    if (id < node_id) {
-        for (int i = P2P_LEAF_SIZE / 2 - 1; i >= 0; i--) {
-            if (leaf_set[i].pid == 0 || leaf_set[i].id < id) {
-                index = i;
-                break;
-            } else if (leaf_set[i].id == id) {
-                // we already have this nodeID, no need to update anything
-                return;
-            }
-        }
+    int distance;
+    int max_distance;
+    int index;
 
-        if (index >= 0) {
-            // left shift all entry from index
-            for (int j = index; j > 0; j--) {
-                leaf_set[j - 1].id = leaf_set[j].id;
-                leaf_set[j - 1].pid = leaf_set[j].pid;
-            }
-            // replace index with new entry
-            leaf_set[index].id = id;
-            leaf_set[index].pid = src;
+    if (node_id == id) {
+        return;
+    }
+
+    // if id is already in leaf set, do nothing
+    // this is slow for large leaf set
+    for (Entry e : leaf_set) {
+        if (e.id == id) {
+            return;
         }
-    } else if (id > node_id) {
-        for (int i = P2P_LEAF_SIZE / 2; i < P2P_LEAF_SIZE; i++) {
-            if (leaf_set[i].pid == 0 || leaf_set[i].id > id) {
-                index = i;
-                break;
-            } else if (leaf_set[i].id == id) {
-                return;
-            }
+    }
+
+    // Greedy algorithm
+    // 1. try to treat the given nodeID as smaller than the current node_id
+    // 1.a if there is an empty spot in the lower half, just fill it
+    // 2. if the smaller half of the leaf set is already filled,
+    // see if we are closer to any of those nodes
+    // 2.a if we are closer, pick the node in the smaller half that is most distant
+    // from current node and replace it. Then try to fit the replaced node into larger half
+    // 2.b if not, treat the given nodeID as larger than the current node_id and
+    // try to fit it into the larger half
+    distance = Distance(id, node_id);
+    max_distance = distance;
+    for (int i = 0; i < P2P_LEAF_SIZE / 2; i++) {
+        Entry* e = &leaf_set[i];
+        if (e->pid == 0) {
+            // 1.a
+            e->id = id;
+            e->pid = src;
+            return;
+        } else if (Distance(e->id, node_id) > max_distance) {
+            max_distance = Distance(e->id, node_id);
+            index = i;
         }
-        if (index >= P2P_LEAF_SIZE / 2) {
-            // left shift all entry from index
-            for (int j = index; j < P2P_LEAF_SIZE - 1; j++) {
-                leaf_set[j + 1].id = leaf_set[j].id;
-                leaf_set[j + 1].pid = leaf_set[j].pid;
-            }
-            // replace index with new entry
-            leaf_set[index].id = id;
-            leaf_set[index].pid = src;
+    }
+    if (max_distance > distance) {
+        // 2.a
+        UpdateUpperLeafSet(leaf_set[index].id, leaf_set[index].pid);
+        leaf_set[index].id = id;
+        leaf_set[index].pid = src;
+    } else {
+        UpdateUpperLeafSet(id, src);
+    }
+}
+
+void UpdateUpperLeafSet(nodeID id, int src) {
+    int distance;
+    int max_distance;
+    int index;
+
+    distance = Distance(node_id, id);
+    max_distance = distance;
+    for (int i = P2P_LEAF_SIZE / 2; i < P2P_LEAF_SIZE; i++) {
+        Entry* e = &leaf_set[i];
+        if (e->pid == 0) {
+            e->id = id;
+            e->pid = src;
+            return;
+        } else if (Distance(node_id, e->id) > max_distance) {
+            max_distance = Distance(node_id, e->id);
+            index = i;
+        }
+    }
+    if (max_distance > distance) {
+        leaf_set[index].id = id;
+        leaf_set[index].pid = src;
+    }
+}
+
+void RemoveNodeFromLeafSet(nodeID id) {
+    TracePrintf(10, "Remove dead node %04x from leaf set\n", id);
+    for (Entry e : leaf_set) {
+        if (e.id == id) {
+            e.id = 0;
+            e.pid = 0;
         }
     }
 }
 
 void PrintLeafSet() {
-    TracePrintf(10, "pid: %d, node_id: %04x, leaf_set: ", GetPid(), node_id);
-    for (Entry e : leaf_set) {
-        TracePrintf(10, "(%d, %d) ", e.id, e.pid);
-    }
-    TracePrintf(10, "\n");
+    TracePrintf(10, "node_id: %04x, leaf_set: (%d), (%d), (%d), (%d)\n",
+                node_id, leaf_set[0].id, leaf_set[1].id, leaf_set[2].id, leaf_set[3].id);
 }
