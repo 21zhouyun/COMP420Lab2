@@ -62,15 +62,57 @@ void HandleLookupMessage(int src, int dest, const void *msg, int len);
 void HandleReclaimMessage(int src, int dest, const void *msg, int len);
 void HandleReclaimReplicateMessage(int src, int dest, const void *msg, int len);
 
+/**
+ * Route a given message to a destination in the overlay network
+ * @param src  original source of the message
+ * @param dest destination node id
+ * @param msg  raw message
+ * @param len  length of the message
+ * @param type type of the message
+ */
 void Route(int src, nodeID dest, const void *msg, int len, int type);
 
+/**
+ * The distance from x(smaller) to y(larger).
+ * @param  x smaller node id
+ * @param  y larger node id
+ * @return   distance from x to y
+ */
 unsigned short Distance(nodeID x, nodeID y);
+
+/**
+ * The numeric distance between x and y. Unlike Distance(x, y),
+ * the absolute distance is symmetric. This metric is used for
+ * routing
+ * @param  x node id of first node
+ * @param  y node id of second node
+ * @return   absolute distance between x and y
+ */
 unsigned short AbsoluteDistance(nodeID x, nodeID y);
 
+/**
+ * Update leaf set of this node
+ * @param id  the new node id to consider
+ * @param src the pid of the node with the new node id
+ */
 void UpdateLeafSet(nodeID id, int src);
+
+/**
+ * Update the upperhalf of leaf set of this node
+ * @param id  the new node id to consider
+ * @param src the pid of the node with the new node id
+ */
 void UpdateUpperLeafSet(nodeID id, int src);
 
+/**
+ * Remove the node with the given node id from leaf set
+ * @param id node id of the node to remove
+ */
 void RemoveNodeFromLeafSet(nodeID id);
+
+/**
+ * Print leaf set with TracePrintf()
+ */
 void PrintLeafSet();
 
 void HandleMessage(int src, int dest, const void *msg, int len) {
@@ -600,12 +642,6 @@ void Route(int src, nodeID dest, const void *msg, int len, int type) {
     }
 }
 
-/**
- * The distance from x(smaller) to y(larger).
- * @param  x [description]
- * @param  y [description]
- * @return   [description]
- */
 unsigned short Distance(nodeID x, nodeID y) {
     if (x <= y) {
         return y - x;
@@ -614,14 +650,6 @@ unsigned short Distance(nodeID x, nodeID y) {
     }
 }
 
-/**
- * Absolute distance between x and y. Unlike Distance(), this
- * metric does not care about direction.
- * Used for routing.
- * @param  x [description]
- * @param  y [description]
- * @return   [description]
- */
 unsigned short AbsoluteDistance(nodeID x, nodeID y) {
     return std::min(std::abs(x - y), RING_SIZE - std::abs(x - y));
 }

@@ -1,3 +1,69 @@
 Project structure
-kernel.cc:
 
+kernel.cc
+Contains implementation of HandleMessage and all other message handling related
+to the overlay network and distributed file storage
+
+message.h
+Contains definition of all messages used by the system.
+
+message.cc
+Contains constructor of some complicated messages and helper functions to construct
+those messages.
+
+overlay.cc
+Contains implementation of the overlay network interface used by user process.
+
+test_leaf_set.c
+Tests the leaf set construction and maintainence algorithm described below.
+
+README
+This file.
+
+Algorithms:
+Since there is no detailed description on how to construct a leaf set and how to handle a
+dead node, I come up with the following algorithms:
+
+leaf set construction algorithm is a greedy algorithm that fills the lower half (index 0 to P2P_LEAF_SIZE / 2)
+with nodeID "smaller" than current node id and upper half (index P2P_LEAF_SIZE / 2 to P2P_LEAF_SIZE)
+with nodeID "larger" than current node id. This algorithm is inspired by Jake's Piazza response:
+https://piazza.com/class/is5hhwlricz17p?cid=91
+
+UpdateLeafset(x):
+    try to treat the given nodeID as smaller than the current node_id my_id
+    if there is an empty spot in the lower half, just fill it
+    if the lower half of the leaf set is already filled:
+        find the node n in lower half od the leaf set where distance(n.id, my_id) is the largest
+        if (distance(n.id, my_id) > distance(x.id, my_id)):
+            replace n with x
+            UpdateUpperHalf(n)
+            return
+    UpdateUpperHalf(x)
+
+UpdateUpperHalf(x):
+    treat the given nodeID as larger than the current node_id my_id
+    if there is an empty spot in the upper half, just fill it
+    if the upper half of the leaf set is already filled:
+        find the node n in upper half od the leaf set where distance(n.id, my_id) is the largest
+        if (distance(n.id, my_id) > distance(x.id, my_id)):
+            replace n with x
+            return
+    
+Dead node removing is simpler than what is proposed here: https://piazza.com/class/is5hhwlricz17p?cid=69
+Each time when a node sends an exchange message to nodes in its leaf set, it assumes all nodes in the 
+leaf set is dead unless:
+1. it receives a reply from the node to the exchange message before next round
+2. it receives an exchange message from the node before next round
+
+If there is any node remains in the dead_node set when the next round of exchange begins, the current node
+will remove those nodes from its leaf_set before starting the exchange process.
+
+The leaf set construction algorithm and dead node removing algorithm is tested manually with test_leaf_set.c
+
+Other tests
+I tested basic store, lookup, reclaim with the provided store1.c and store2.c. At the end of each test, you
+will see message like "Fail to send exchange message from x to y" on stderr. That is expected because 
+computers does not shut down at the same time and leaf sets are not updated as soon as a node is dead.
+
+Other notes
+This project is implemented in C++11. I updated the Makefile.

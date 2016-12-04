@@ -1,63 +1,11 @@
-/*
- *  Simple example test program for the COMP 420 RedNet peer-to-peer
- *  storage system (Lab 2).  This program does some sample peer-to-peer
- *  Insert, Lookup, and Reclaim operations, after everyone does a
- *  Join.  See the comments in-line below for more explanation of
- *  what the program does.
- *
- ***********************************************************************
- *  YOU MUST WRITE YOUR OWN IMPLEMENTATION OF Join, Insert, Lookup,
- *  AND Reclaim.  Each of these should *ONLY* build a message and send
- *  it to the local operating system kernel (using SendMessage with a
- *  destination address of 0) to request the corresponding operation
- *  to be performed by your peer-to-peer storage system implementation
- *  that you must write in your kernel.  The actual *BEHAVIOR* of
- *  joining, inserting, looking up, or reclaiming should be done in
- *  your kernel.  See Section 3 of the Lab 2 description.
- ***********************************************************************
- *  It is recommended to put your implementation of Join, Insert,
- *  Lookup, and Reclaim in a seprate source file.  Then, edit the
- *  Makefile.user to add the corresponding .o filename at the end
- *  of the "LIBS=" line.  For example, if your implementation of
- *  these four procedures is in p2p-request.c, then the "LIBS=" line
- *  should read:
- *
- *  LIBS = $(PUBDIR)/lib/libusr420.so p2p-request.o
- *
- *  Again, each of these four procedures in this file should *ONLY*
- *  build a message and send it to the local operating system kernel
- *  to request the corresponding operation.
- ***********************************************************************
- *
- *  Run as: rednet -P 1 -N [other_flags] system_prog -- store1 ##
- *
- *  The -P 1 flag causes period HandleMessage calls once each
- *  second.  This allows you to control any periodic or timer-related
- *  functions you need your implementation of the peer-to-peer
- *  system to perform.  For consistency between everyone's
- *  implementation behavior, use -P 1 (not some other value) and
- *  use a simple counter (such as a static int) if you want to do
- *  something every 2 seconds or every 5 seconds or whatever.
- *
- *  The -N flag is necessary to start all 32 computers automatically
- *  and to generate the network topology of hop connections between
- *  them (see Section 4.2 of the RedNet introduction).  Each computer
- *  and thus its kernel starts immediately, but the user process on
- *  each of these computers starts running at a time randomly spread
- *  over the first 20 seconds after starting "rednet".
- *
- *  The ## argument at the end is automatically replaced, for each copy
- *  of the user program started, with an "index" indicating which
- *  copy of the user program this is.  This value will range from
- *  "0" to "31", respectively, for each user process.  The value is
- *  visible as a "%d" format character string as argv[1], which we
- *  parse below using atoi().
- */
-
-#include <stdio.h>
 /**
  * This test is used to manually verify the leaf set update mechanism
  * is working correctly. The node_id of a node is just its index.
+ * After all nodes joins, it will wait for 20 seconds then node 10
+ * will exit. Soon you will see messages like "Fail to send exchange
+ * message from x to <pid of node 10>" in stderr. But it should stop
+ * after 2 seconds. After that, the trace file should be used to manually
+ * verify node 8, 9, 11, 12's leaf set is updated to remove node 10.
  */
 #include <stdio.h>
 #include <sys/types.h>
