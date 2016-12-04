@@ -33,6 +33,10 @@ int Join(nodeID id) {
  */
 int Insert(fileID fid, void* contents, int len) {
     TracePrintf(10, "Forward insert request\n");
+    if (len > P2P_FILE_MAXSIZE) {
+        std::cerr << "File too large!" << std::endl;
+        return -1;
+    }
     int status = 0;
     int src = 0;
     char* message = MakeDataMessage(fid, contents, len, INSERT);
