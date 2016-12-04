@@ -36,7 +36,7 @@ int alarm_round = 0;
  */
 bool joined_overlay_network = false;
 nodeID node_id;
-const unsigned int RING_SIZE = 65536;
+const int RING_SIZE = 65536;
 
 Entry leaf_set[P2P_LEAF_SIZE] = {{0, 0}, {0, 0}, {0, 0}, {0, 0}};
 // nodes in leaf set where I haven't get response from an exchange message
@@ -65,6 +65,8 @@ void HandleReclaimReplicateMessage(int src, int dest, const void *msg, int len);
 void Route(int src, nodeID dest, const void *msg, int len, int type);
 
 unsigned short Distance(nodeID x, nodeID y);
+unsigned short AbsoluteDistance(nodeID x, nodeID y);
+
 void UpdateLeafSet(nodeID id, int src);
 void UpdateUpperLeafSet(nodeID id, int src);
 
@@ -440,26 +442,11 @@ void HandleReclaimReplicateMessage(int src, int dest, const void *msg, int len) 
 void Route(int src, nodeID dest, const void *msg, int len, int type) {
     int next_hop = GetPid();
     // first treat dest as smaller than current node
-    unsigned short min_distance = Distance(dest, node_id);
-    for (int i = 0; i < P2P_LEAF_SIZE / 2; i++) {
-        Entry e = leaf_set[i];
-        if (e.pid > 0) {
-            int distance = std::min(Distance(dest, e.id), Distance(e.id, dest));
-            if (distance < min_distance) {
-                next_hop = e.pid;
-                min_distance = distance;
-            }
-        }
-    }
-    // then treat dest as larger than current node
-    for (int i = P2P_LEAF_SIZE / 2; i < P2P_LEAF_SIZE; i++) {
-        Entry e = leaf_set[i];
-        if (e.pid > 0) {
-            int distance = std::min(Distance(dest, e.id), Distance(e.id, dest));
-            if (distance < min_distance) {
-                next_hop = e.pid;
-                min_distance = distance;
-            }
+    unsigned short min_distance = AbsoluteDistance(dest, node_id);
+    for (Entry e : leaf_set) {
+        if (e.pid > 0 && AbsoluteDistance(e.id, dest) < min_distance) {
+            next_hop = e.pid;
+            min_distance = AbsoluteDistance(e.id, dest);
         }
     }
 
@@ -617,6 +604,18 @@ unsigned short Distance(nodeID x, nodeID y) {
     } else {
         return RING_SIZE - x + y;
     }
+}
+
+/**
+ * Absolute distance between x and y. Unlike Distance(), this
+ * metric does not care about direction.
+ * Used for routing.
+ * @param  x [description]
+ * @param  y [description]
+ * @return   [description]
+ */
+unsigned short AbsoluteDistance(nodeID x, nodeID y) {
+    return std::min(std::abs(x - y), RING_SIZE - std::abs(x - y));
 }
 
 void UpdateLeafSet(nodeID id, int src) {
